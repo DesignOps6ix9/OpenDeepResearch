@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DeepDeepResearch M2/M3</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="header">
+        <h1>DeepDeepResearch M2/M3</h1>
+        <p>可观察、可中途干预（steer）、多角色协作的研究循环</p>
+      </header>
+
+      <section class="panel controls">
+        <div class="grid2">
+          <label>
+            研究目标
+            <input id="goalInput" type="text" placeholder="例如：比较 2026 年美国 AI Agent 框架生态" />
+          </label>
+          <label>
+            最大步数
+            <input id="maxStepsInput" type="number" min="1" max="50" value="8" />
+          </label>
+        </div>
+        <button id="startBtn">启动 Run</button>
+        <div class="meta">
+          <span>Run ID: <code id="runId">-</code></span>
+          <span>状态: <code id="connState">未连接</code></span>
+        </div>
+      </section>
+
+      <section class="panel steer">
+        <h2>中途干预（Steer）</h2>
+        <textarea id="steerInput" rows="3" placeholder="例如：change goal: 重点比较开源方案；ban source: reddit.com；constraint: 输出必须列不确定性"></textarea>
+        <div class="grid2">
+          <label>
+            作用范围
+            <select id="scopeInput">
+              <option value="global">global</option>
+              <option value="next_step">next_step</option>
+            </select>
+          </label>
+          <button id="sendSteerBtn">发送 Steer</button>
+        </div>
+      </section>
+
+      <section class="panel stream">
+        <h2>Token Stream</h2>
+        <pre id="tokenStream"></pre>
+      </section>
+
+      <section class="panel roles">
+        <h2>Role Outputs</h2>
+        <div class="role-tabs">
+          <button class="role-tab active" data-role-tab="supervisor">Supervisor</button>
+          <button class="role-tab" data-role-tab="planner">Planner</button>
+          <button class="role-tab" data-role-tab="researcher">Researcher</button>
+        </div>
+        <div class="role-panels">
+          <pre id="roleSupervisor" class="role-panel active"></pre>
+          <pre id="rolePlanner" class="role-panel"></pre>
+          <pre id="roleResearcher" class="role-panel"></pre>
+        </div>
+      </section>
+
+      <section class="panel final-report">
+        <h2>Final Report</h2>
+        <div class="meta">
+          <span>汇总状态: <code id="finalReportState">等待运行完成</code></span>
+        </div>
+        <pre id="finalReportView"></pre>
+      </section>
+
+      <section class="panel timeline">
+        <h2>Timeline</h2>
+        <ul id="timelineList"></ul>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
