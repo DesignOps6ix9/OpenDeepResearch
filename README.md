@@ -1,141 +1,68 @@
-# DeepDeepResearch (M2 + M3 Skeleton)
+# OpenDeepResearch
 
-这个仓库现在实现了可运行的 `M2 + M3` 最小闭环：
+一句话定位（Tagline）：可配置、可审计、可交互的开源 Deep Research Agent——用“可注入提示词”的研究流程，产出可溯源的高质量研究报告。
 
-- M2: 多角色协作（`supervisor -> planner -> researcher`）
-- M3: 检索增强（query expansion / 去重 / 高质量来源优先 / 结构化证据 / 自检）
-- 运行中可注入 steer，且 steer 会被 supervisor 审核并真正改变后续行为
-- run 结束自动生成 `final_report`（全局汇总，不是仅单步输出）
-- ReAct 风格执行（Researcher: Thought -> Action -> Observation）
-- Interruption Gateway（用户 steer 到达后即时中断并回到 Supervisor）
+执行摘要：
+- OpenDeepResearch 将“检索 → 归纳 → 结构化写作”拆成可观察、可配置的研究工作流，避免黑箱式输出。
+- 支持人在回路（澄清/确认/纠偏），并允许在关键节点注入提示词与工具能力。
+- 默认面向“专业研究报告”场景：引用可追溯、过程可复现、可评测、可扩展。
+- 适合用作：你的团队内部研究机器人、可复用的研究管线模板、以及可对齐基线的 agent 评测载体。
 
-## 当前能力
+快速导航： [核心问题](#核心问题陈述) · [对比表](#功能亮点与使用场景对比) · [快速开始](#快速开始) · [流程图](#交互式研究流程可注入提示词) · [配置扩展](#配置与扩展点) · [贡献](#贡献指南) · [FAQ](#常见问题) · [许可](#许可与致谢)
 
-- 后端循环：`collect_steer -> supervisor -> planner -> researcher -> decide_next`
-- 事件溯源：`runs` + `events` + `steer_commands`
-- 实时可观测：WebSocket 推送 token 与步骤日志
-- 中途干预：steer 到达即触发 `interrupt_requested`，Researcher 会即时暂停并跳回 Supervisor
-- 质量策略：
-  - query expansion
-  - 多 provider 检索结果聚合与去重
-  - 可信来源优先（trusted domain boost）
-  - 结构化 notes（claim / evidence / citations）
-  - outline -> report
-  - 自检（missing points / counterexamples / uncertainties）
+## 核心问题陈述
 
-## 技术栈
+“Deep Research”很强，但实践中常遇到这些痛点：
 
-- 后端：FastAPI + asyncio
-- 存储：SQLite（event sourcing）
-- 前端：原生 HTML/JS（MVP）
-- LLM：OpenAI-compatible Chat Completions（已适配 ARK）
-- Search：Tavily / Serper / Crossref
-- Reader：Firecrawl / Jina Reader
-- Rerank：Cohere Rerank
+1) 黑箱：你看不到它如何拆解问题、为何选这些来源、哪一步引入偏差。
+2) 不可复现：同一问题多次运行结果漂移，很难比较与回归。
+3) 难以定制：模型、搜索、工具、提示词往往是“固定套餐”，无法对齐你的业务/团队知识。
+4) 缺少工程化接口：难以在 CI、评测、日志、权限、安全边界等方面落地成“可维护系统”。
 
-## 目录结构
+OpenDeepResearch 的目标是把这些痛点变成“可配置项”和“可扩展点”。
 
-```text
-backend/
-  app/
-    config.py      # 环境变量与默认策略
-    db.py          # SQLite event store
-    llm.py         # OpenAI-compatible LLM client
-    providers.py   # search/reader provider 与质量打分
-    engine.py      # M2/M3 运行图与角色逻辑
-    main.py        # REST + WebSocket API
-  static/
-    index.html     # 控制台 + steer 输入 + 角色视图
-    app.js
-    styles.css
-```
+## 创新点与价值主张
 
-## 快速启动
+- 可审计工作流（Workflow as Code）：把研究拆成清晰节点（澄清 → 简报 → 研究 → 压缩 → 终稿），每步可观察、可替换。
+- 提示词可注入（Prompt Injection by Design）：支持在研究系统提示词中注入额外指令（例如：偏好来源、引用格式、合规约束、内部工具说明）。
+- 工具可插拔（Search / MCP / 自定义工具）：既可用通用搜索 API，也可接入自建工具与外部服务（如知识库、内部检索、数据 API）。
+- 人在回路（Human-in-the-loop）：支持在研究前进行澄清与确认，降低“问题不清导致研究跑偏”的成本。
+- 可评测与可迭代（Eval-first）：按可量化基线做回归与对比，让优化有据可依。
+
+未指定的实现细节默认为“无特定约束”：你可以把它当作一个可自由改造的研究 Agent 模板。
+
+## 功能亮点与使用场景对比
+
+| 维度 | 传统 deepresearch（常见形态） | OpenDeepResearch |
+|------|------------------------------|------------------|
+| 透明度/可解释性 | 多为黑箱：过程不可见或不可控 | 工作流显式：每步可观察、可改造、可审计 |
+| 交互方式 | 一次性提问 → 一次性输出 | 支持澄清与确认；允许在关键节点注入提示词 |
+| 模型与供应商 | 通常绑定固定组合 | 模型可配置（研究/压缩/终稿分阶段）；可按需替换 |
+| 搜索与工具 | 内置搜索与固定能力边界 | 搜索 API + 可插拔工具（含外部工具接入） |
+| 个性化与规范 | 难以强约束 | 可用提示词与配置项固化“来源偏好/格式/合规” |
+| 工程化落地 | 很难对齐日志/评测/回归 | 更适合作为可维护的研究管线与评测载体 |
+| 典型场景 | 临时查询、个人使用 | 团队研究模板、竞品/行业跟踪、技术调研、决策备忘录、可复用研究流水线 |
+
+## 快速开始
+
+约定：以下命令默认你已在 仓库根目录。
+
+### 环境要求
+- Python 3.10+（推荐 3.11）
+- 已配置可用的 LLM Key 与至少一种搜索/工具能力（见下方 .env）
+
+### 安装与启动（macOS / Linux）
 
 ```bash
-cd /Users/zhouyafan/code/deepresearch/deepdeepresearch
+python -m pip install -U pip uv
+uv venv
+source .venv/bin/activate
+uv sync
+
 cp .env.example .env
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt
+# 启动本地 Agent Server（带可视化交互 UI）
+uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
 
-# 会自动读取 .env
-uvicorn app.main:app --app-dir backend --reload --port 8000
-```
 
-浏览器打开：
 
-- 用户页（黑色极简）：http://127.0.0.1:8000
-
-## 环境变量
-
-详见 `.env.example`。
-
-最关键：
-
-- `LLM_BASE_URL`
-- `LLM_API_KEY`
-- `LLM_MODEL_SUPERVISOR`
-- `LLM_MODEL_PLANNER`
-- `LLM_MODEL_RESEARCHER`
-- `TAVILY_API_KEY` / `SERPER_API_KEY`
-- `FIRECRAWL_API_KEY` / `JINA_READER_API_KEY`
-- `COHERE_API_KEY`
-- `CROSSREF_BASE_URL`
-- `TRUSTED_DOMAINS`
-- `DEFAULT_BLOCKED_DOMAINS`
-
-## API
-
-- `GET /api/system/capabilities`
-- `GET /api/runs?limit=50&offset=0`（任务历史）
-- `POST /api/runs`
-  - body: `{ "goal": "...", "max_steps": 8 }`
-- `POST /api/runs/{run_id}/steer`
-  - body: `{ "content": "constraint: ...; ban source: ...", "scope": "global" }`
-- `GET /api/runs/{run_id}`
-- `GET /api/runs/{run_id}/events`
-- `WS /ws/runs/{run_id}`
-  - 服务端持续推送 events
-  - 客户端可发送 `{"type":"steer","content":"...","scope":"global"}`
-
-关键事件：
-- `researcher_output`：单步输出
-- `final_report`：全局最终报告
-- `run_finished`：运行结束，payload 包含 `has_final_report`
-- `interrupt_requested` / `research_paused_for_steer`：中断网关
-- `researcher_react_thought` / `researcher_react_action` / `researcher_react_observation`：ReAct 过程
-
-## steer 指令示例
-
-- `change goal: 重点比较开源agent框架`
-- `constraint: 必须标注不确定性`
-- `allow source: arxiv.org`
-- `ban source: reddit.com`
-- `replan`
-- `stop`
-
-## Key 需求评估（想把效果做强）
-
-最低必需（必须有）：
-
-1. `LLM_API_KEY`
-
-强烈建议（质量提升最大）：
-
-1. `TAVILY_API_KEY`（语义检索质量高）
-2. `SERPER_API_KEY`（补充 Google 广度）
-3. `FIRECRAWL_API_KEY`（稳定正文抽取，减少噪声）
-4. `COHERE_API_KEY`（对检索结果做语义重排，显著提高前几条相关性）
-5. `JINA_READER_API_KEY`（作为正文抽取回退，提高可读率）
-
-可选增强（后续可以补）：
-
-1. 学术专用 API（Semantic Scholar）增强论文召回
-2. 多语言检索 provider（根据目标区域补充）
-
-## 说明
-
-- 已默认屏蔽部分低信号来源（如 `reddit.com`、`quora.com`）。
-- 若未配置外部 key，系统会自动降级为 fallback 模式（流程仍可运行，但检索质量会明显下降）。
