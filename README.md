@@ -1,3 +1,194 @@
+
+# OpenDeepResearch
+
+**Tagline:** An interactive deep-research agent you can steer *mid-run* — inject instructions (steer), trigger interruption + replanning, prevent silent drift, and save time & tokens.
+
+## Executive Summary
+- Not a “prompt once → wait for a black-box report” workflow. You can intervene, correct, and re-plan while the run is executing.
+- **ReAct-style graph orchestration:** `check_clarity` clarifies scope first; `supervisor` routes decisions; `planner` updates the plan; `researcher` runs ReAct loops for search/read/synthesize; `reporter` produces a deliverable `final_report`.
+- Fully observable: **event-sourced runs (SQLite)** + **WebSocket** streaming tokens and step logs for replay and postmortems.
+- Output-oriented: each run produces a **global `final_report`** (not just stepwise answers) while preserving structured evidence trails.
+
+## Problem Statement
+Traditional deep-research agents can be strong on raw output quality, but they often break down in real usage:
+
+- **Uncontrollable process:** once it starts, you can only wait — small early misunderstandings get amplified into the final report.
+- **Hard to correct:** new constraints or changed requirements usually mean abort-and-rerun, burning time and tokens linearly.
+- **Not auditable:** it’s difficult to answer “where did this conclusion come from?”, “why these sources?”, or “which step introduced drift?”
+- **Hard to operationalize:** without observability, replay, and evaluation hooks, iteration and benchmarking are painful.
+
+**OpenDeepResearch** aims to turn “fire-and-forget research” into a **steerable, traceable, replayable research workflow**.
+
+## Differentiators & Value Proposition
+- **Steerable research (human-in-the-loop):** inject constraints/preferences/bans/replanning instructions while the run is live; the `supervisor` evaluates and applies them to future behavior.
+- **Interruption Gateway:** incoming steer triggers `interrupt_requested`; the agent pauses and returns to `supervisor` instead of continuing to waste tokens down the wrong path.
+- **Auditable + replayable runs:** event sourcing (`runs + events + steer_commands`) persisted to SQLite enables replay, comparisons, evaluation, and tuning.
+- **More stable via multi-node graph:** `supervisor` decides and routes; `planner` decomposes and revises; `researcher` executes ReAct retrieval and evidence structuring; `reporter` writes the final deliverable — reducing single-agent runaway risk.
+- **Retrieval quality controls:** query expansion, multi-provider aggregation + dedup, trusted-domain boosting, structured evidence, outline→report, self-checks (gaps / counterexamples / uncertainty).
+- **Real-time observability:** token + step logs streamed via WebSocket; the UI shows timeline, role outputs, and a `final_report` panel.
+
+## Highlights & Use Cases
+### Traditional deep research vs OpenDeepResearch
+
+| Dimension | Typical deep research | OpenDeepResearch |
+|---|---|---|
+| Interaction | One-shot prompt → one-shot output | **Steer mid-run**, interrupt + replan |
+| Controllability | Low (black-box until the end) | High (human-in-the-loop steering via `supervisor`) |
+| Observability | Output visible, process opaque | Token stream + step logs + timeline (WebSocket) |
+| Audit / Replay | Weak or none | SQLite event sourcing: `runs/events/steer_commands` |
+| Source quality | Mostly model-dependent | Expansion, dedup, trusted boosts, optional rerank, policy filters |
+| Output format | Long single response | Deliverable **`final_report`** (global synthesis) + evidence trails |
+| Best for | Quick one-off queries | Competitive/market research, diligence, tech selection, policy/lit reviews, team knowledge capture |
+
+### Typical Scenarios
+- **Research that must be corrected mid-run:** add new constraints (must cite certain sources / must show uncertainty / ban low-signal sites).
+- **Team replay & postmortem:** replay the event stream to review evidence and improve strategies.
+- **Prototype a controllable research pipeline:** minimal backend + UI that you can productize later.
+
+## Quickstart
+
+### Requirements
+- Python 3.10+ (recommended 3.11)
+- A working LLM key, plus at least one search / custom tool API key
+- Virtualenv recommended
+
+### Install & Run (macOS / Linux)
+```bash
+# Clone the repository
+git clone https://github.com/DesignOps6ix9/OpenDeepResearch.git
+cd OpenDeepResearch
+
+# Create a virtual environment and install dependencies
+python -m pip install -U pip uv
+uv venv
+source .venv/bin/activate
+uv sync
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env and fill in your model key(s) and search/tool key(s)
+
+# Start the local Agent service (with built-in LangGraph UI)
+uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
+```
+
+### Install & Run （Windows） 
+```bash
+git clone https://github.com/DesignOps6ix9/OpenDeepResearch.git
+cd OpenDeepResearch
+
+python -m pip install -U pip uv
+uv venv
+.venv\Scripts\Activate.ps1
+uv sync
+
+Copy-Item .env.example .env
+# Use a text editor to fill in the keys in .env
+
+uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
+```
+
+## Run Example
+
+After the service starts, open `http://127.0.0.1:2024/docs` in your browser to view the API documentation.
+
+In the LangGraph Studio input box, enter a question such as:
+
+> Please research: “What do the RACE and FACT frameworks in DeepResearch Bench evaluate?”, and output a summary with citations.
+
+The system will automatically:
+- Clarify the question scope
+- Generate a research brief
+- Collect sources via search and custom tools
+- Compress and synthesize findings
+- Output a structured report with traceable citations
+
+You can inject preferences (e.g., preferred sources, citation format, or additional constraints) at different stages to dynamically adjust the research path.
+
+---
+
+## Configuration & Extensions
+
+### Configuration Options
+
+#### 1) Required (the system cannot run without these)
+
+| Variable | Description | Default |
+|---|---|---|
+| `LLM_BASE_URL` | LLM gateway URL (OpenAI-compatible) | `https://ark.cn-beijing.volces.com/api/v3` |
+| `LLM_API_KEY` | LLM API key | (empty) |
+| `LLM_MODEL_SUPERVISOR` | Supervisor model | `doubao-seed-1-6-flash-250828` |
+| `LLM_MODEL_PLANNER` | Planner model | `doubao-seed-1-6-flash-250828` |
+| `LLM_MODEL_RESEARCHER` | Researcher model | `doubao-seed-1-6-flash-250828` |
+| `RESEARCH_MODEL_TEMPERATURE` | Temperature for research | `0` |
+
+#### 2) Strongly recommended (determines retrieval/reading quality)
+
+| Variable | Purpose |
+|---|---|
+| `TAVILY_API_KEY` | Semantic search |
+| `SERPER_API_KEY` | Broad Google-style search |
+| `FIRECRAWL_API_KEY` | Stable webpage content extraction |
+| `JINA_READER_API_KEY` | Fallback content extraction |
+| `COHERE_API_KEY` | Reranking results (rerank) |
+| `COHERE_RERANK_MODEL` | Rerank model (default `rerank-v3.5`) |
+
+#### 3) Optional enhancements
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `CROSSREF_BASE_URL` | Academic metadata source | `https://api.crossref.org` |
+
+#### 4) Source policy configuration
+
+| Variable | Description |
+|---|---|
+| `DEFAULT_ALLOWED_DOMAINS` | Default allowlist domains (comma-separated; empty = no filtering) |
+| `DEFAULT_BLOCKED_DOMAINS` | Default blocklist domains (default: `reddit.com,quora.com`) |
+| `TRUSTED_DOMAINS` | Trusted domains boost list (comma-separated) |
+
+#### 5) Retrieval scale / performance configuration
+
+| Variable | Description | Default |
+|---|---|---|
+| `SEARCH_MAX_RESULTS_PER_QUERY` | Max results per query | `5` |
+| `MAX_SOURCES_PER_STEP` | Max candidate sources kept per step | `6` |
+| `MAX_READ_SOURCES_PER_STEP` | Max sources to read per step | `4` |
+| `CROSSREF_MAX_RESULTS_PER_QUERY` | Crossref max results per query | `4` |
+
+#### 6) Compatibility aliases (choose either)
+
+| Primary variable | Alias |
+|---|---|
+| `LLM_BASE_URL` | `ARK_BASE_URL` |
+| `LLM_API_KEY` | `ARK_API_KEY` |
+| `LLM_MODEL_SUPERVISOR/PLANNER/RESEARCHER` | `ARK_MODEL` (overrides all three) |
+| `JINA_READER_API_KEY` | `JINA_API_KEY` |
+
+#### 7) Runtime configuration (API request parameters)
+
+| Endpoint | Field | Description |
+|---|---|---|
+| `POST /api/runs` | `goal` | Research objective (required) |
+| `POST /api/runs` | `max_steps` | Max iterations (1–50, default 4) |
+| `POST /api/runs` | `config` | Extra runtime config (stored in run record) |
+| `POST /api/runs/{run_id}/steer` | `content` | Mid-run steering content |
+| `POST /api/runs/{run_id}/steer` | `scope` | Steering scope (default `global`) |
+
+#### 8) Minimal viable `.env` (example)
+
+```env
+LLM_BASE_URL=your_gateway_url
+LLM_API_KEY=your_llm_key
+LLM_MODEL_SUPERVISOR=your_model_id
+LLM_MODEL_PLANNER=your_model_id
+LLM_MODEL_RESEARCHER=your_model_id
+RESEARCH_MODEL_TEMPERATURE=0
+```
+
+
+
+
 # OpenDeepResearch
 
 一句话定位：研究过程可交互的深度研究 Agent——运行中随时注入指令（steer），触发中断与重规划，避免黑盒跑偏，节省 token 与时间。
@@ -234,190 +425,3 @@ RESEARCH_MODEL_TEMPERATURE=0
 
 
 
-
-
-# OpenDeepResearch
-
-**Tagline:** An interactive deep-research agent you can steer *mid-run* — inject instructions (steer), trigger interruption + replanning, prevent silent drift, and save time & tokens.
-
-## Executive Summary
-- Not a “prompt once → wait for a black-box report” workflow. You can intervene, correct, and re-plan while the run is executing.
-- **ReAct-style graph orchestration:** `check_clarity` clarifies scope first; `supervisor` routes decisions; `planner` updates the plan; `researcher` runs ReAct loops for search/read/synthesize; `reporter` produces a deliverable `final_report`.
-- Fully observable: **event-sourced runs (SQLite)** + **WebSocket** streaming tokens and step logs for replay and postmortems.
-- Output-oriented: each run produces a **global `final_report`** (not just stepwise answers) while preserving structured evidence trails.
-
-## Problem Statement
-Traditional deep-research agents can be strong on raw output quality, but they often break down in real usage:
-
-- **Uncontrollable process:** once it starts, you can only wait — small early misunderstandings get amplified into the final report.
-- **Hard to correct:** new constraints or changed requirements usually mean abort-and-rerun, burning time and tokens linearly.
-- **Not auditable:** it’s difficult to answer “where did this conclusion come from?”, “why these sources?”, or “which step introduced drift?”
-- **Hard to operationalize:** without observability, replay, and evaluation hooks, iteration and benchmarking are painful.
-
-**OpenDeepResearch** aims to turn “fire-and-forget research” into a **steerable, traceable, replayable research workflow**.
-
-## Differentiators & Value Proposition
-- **Steerable research (human-in-the-loop):** inject constraints/preferences/bans/replanning instructions while the run is live; the `supervisor` evaluates and applies them to future behavior.
-- **Interruption Gateway:** incoming steer triggers `interrupt_requested`; the agent pauses and returns to `supervisor` instead of continuing to waste tokens down the wrong path.
-- **Auditable + replayable runs:** event sourcing (`runs + events + steer_commands`) persisted to SQLite enables replay, comparisons, evaluation, and tuning.
-- **More stable via multi-node graph:** `supervisor` decides and routes; `planner` decomposes and revises; `researcher` executes ReAct retrieval and evidence structuring; `reporter` writes the final deliverable — reducing single-agent runaway risk.
-- **Retrieval quality controls:** query expansion, multi-provider aggregation + dedup, trusted-domain boosting, structured evidence, outline→report, self-checks (gaps / counterexamples / uncertainty).
-- **Real-time observability:** token + step logs streamed via WebSocket; the UI shows timeline, role outputs, and a `final_report` panel.
-
-## Highlights & Use Cases
-### Traditional deep research vs OpenDeepResearch
-
-| Dimension | Typical deep research | OpenDeepResearch |
-|---|---|---|
-| Interaction | One-shot prompt → one-shot output | **Steer mid-run**, interrupt + replan |
-| Controllability | Low (black-box until the end) | High (human-in-the-loop steering via `supervisor`) |
-| Observability | Output visible, process opaque | Token stream + step logs + timeline (WebSocket) |
-| Audit / Replay | Weak or none | SQLite event sourcing: `runs/events/steer_commands` |
-| Source quality | Mostly model-dependent | Expansion, dedup, trusted boosts, optional rerank, policy filters |
-| Output format | Long single response | Deliverable **`final_report`** (global synthesis) + evidence trails |
-| Best for | Quick one-off queries | Competitive/market research, diligence, tech selection, policy/lit reviews, team knowledge capture |
-
-### Typical Scenarios
-- **Research that must be corrected mid-run:** add new constraints (must cite certain sources / must show uncertainty / ban low-signal sites).
-- **Team replay & postmortem:** replay the event stream to review evidence and improve strategies.
-- **Prototype a controllable research pipeline:** minimal backend + UI that you can productize later.
-
-## Quickstart
-
-### Requirements
-- Python 3.10+ (recommended 3.11)
-- A working LLM key, plus at least one search / custom tool API key
-- Virtualenv recommended
-
-### Install & Run (macOS / Linux)
-```bash
-# Clone the repository
-git clone https://github.com/DesignOps6ix9/OpenDeepResearch.git
-cd OpenDeepResearch
-
-# Create a virtual environment and install dependencies
-python -m pip install -U pip uv
-uv venv
-source .venv/bin/activate
-uv sync
-
-# Configure environment variables
-cp .env.example .env
-# Edit .env and fill in your model key(s) and search/tool key(s)
-
-# Start the local Agent service (with built-in LangGraph UI)
-uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
-```
-
-### Install & Run （Windows） 
-```bash
-git clone https://github.com/DesignOps6ix9/OpenDeepResearch.git
-cd OpenDeepResearch
-
-python -m pip install -U pip uv
-uv venv
-.venv\Scripts\Activate.ps1
-uv sync
-
-Copy-Item .env.example .env
-# Use a text editor to fill in the keys in .env
-
-uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
-```
-
-## Run Example
-
-After the service starts, open `http://127.0.0.1:2024/docs` in your browser to view the API documentation.
-
-In the LangGraph Studio input box, enter a question such as:
-
-> Please research: “What do the RACE and FACT frameworks in DeepResearch Bench evaluate?”, and output a summary with citations.
-
-The system will automatically:
-- Clarify the question scope
-- Generate a research brief
-- Collect sources via search and custom tools
-- Compress and synthesize findings
-- Output a structured report with traceable citations
-
-You can inject preferences (e.g., preferred sources, citation format, or additional constraints) at different stages to dynamically adjust the research path.
-
----
-
-## Configuration & Extensions
-
-### Configuration Options
-
-#### 1) Required (the system cannot run without these)
-
-| Variable | Description | Default |
-|---|---|---|
-| `LLM_BASE_URL` | LLM gateway URL (OpenAI-compatible) | `https://ark.cn-beijing.volces.com/api/v3` |
-| `LLM_API_KEY` | LLM API key | (empty) |
-| `LLM_MODEL_SUPERVISOR` | Supervisor model | `doubao-seed-1-6-flash-250828` |
-| `LLM_MODEL_PLANNER` | Planner model | `doubao-seed-1-6-flash-250828` |
-| `LLM_MODEL_RESEARCHER` | Researcher model | `doubao-seed-1-6-flash-250828` |
-| `RESEARCH_MODEL_TEMPERATURE` | Temperature for research | `0` |
-
-#### 2) Strongly recommended (determines retrieval/reading quality)
-
-| Variable | Purpose |
-|---|---|
-| `TAVILY_API_KEY` | Semantic search |
-| `SERPER_API_KEY` | Broad Google-style search |
-| `FIRECRAWL_API_KEY` | Stable webpage content extraction |
-| `JINA_READER_API_KEY` | Fallback content extraction |
-| `COHERE_API_KEY` | Reranking results (rerank) |
-| `COHERE_RERANK_MODEL` | Rerank model (default `rerank-v3.5`) |
-
-#### 3) Optional enhancements
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `CROSSREF_BASE_URL` | Academic metadata source | `https://api.crossref.org` |
-
-#### 4) Source policy configuration
-
-| Variable | Description |
-|---|---|
-| `DEFAULT_ALLOWED_DOMAINS` | Default allowlist domains (comma-separated; empty = no filtering) |
-| `DEFAULT_BLOCKED_DOMAINS` | Default blocklist domains (default: `reddit.com,quora.com`) |
-| `TRUSTED_DOMAINS` | Trusted domains boost list (comma-separated) |
-
-#### 5) Retrieval scale / performance configuration
-
-| Variable | Description | Default |
-|---|---|---|
-| `SEARCH_MAX_RESULTS_PER_QUERY` | Max results per query | `5` |
-| `MAX_SOURCES_PER_STEP` | Max candidate sources kept per step | `6` |
-| `MAX_READ_SOURCES_PER_STEP` | Max sources to read per step | `4` |
-| `CROSSREF_MAX_RESULTS_PER_QUERY` | Crossref max results per query | `4` |
-
-#### 6) Compatibility aliases (choose either)
-
-| Primary variable | Alias |
-|---|---|
-| `LLM_BASE_URL` | `ARK_BASE_URL` |
-| `LLM_API_KEY` | `ARK_API_KEY` |
-| `LLM_MODEL_SUPERVISOR/PLANNER/RESEARCHER` | `ARK_MODEL` (overrides all three) |
-| `JINA_READER_API_KEY` | `JINA_API_KEY` |
-
-#### 7) Runtime configuration (API request parameters)
-
-| Endpoint | Field | Description |
-|---|---|---|
-| `POST /api/runs` | `goal` | Research objective (required) |
-| `POST /api/runs` | `max_steps` | Max iterations (1–50, default 4) |
-| `POST /api/runs` | `config` | Extra runtime config (stored in run record) |
-| `POST /api/runs/{run_id}/steer` | `content` | Mid-run steering content |
-| `POST /api/runs/{run_id}/steer` | `scope` | Steering scope (default `global`) |
-
-#### 8) Minimal viable `.env` (example)
-
-```env
-LLM_BASE_URL=your_gateway_url
-LLM_API_KEY=your_llm_key
-LLM_MODEL_SUPERVISOR=your_model_id
-LLM_MODEL_PLANNER=your_model_id
-LLM_MODEL_RESEARCHER=your_model_id
-RESEARCH_MODEL_TEMPERATURE=0
